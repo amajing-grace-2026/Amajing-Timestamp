@@ -147,3 +147,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .sheet { max-height: 96vh; }
   .start { justify-content: flex-start; overflow-y: auto; }
 }
+
+/* Notifikasi di layar kamera (simpan otomatis) */
+.cam-toast { position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 128px);
+  margin: 0; max-width: calc(100% - 32px); padding: 9px 16px; border-radius: 99px; background: rgba(0,0,0,.72);
+  font-size: 14px; text-align: center; backdrop-filter: blur(6px); pointer-events: none; }
+.thumb.pop { animation: pop .35s ease-out; }
+@keyframes pop { 0% { transform: scale(.6); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.thumb.saving { border-color: #FFC93C; }
+.row .sub { color: var(--muted); font-size: 12.5px; }
+.top-right { display: flex; align-items: center; gap: 10px; flex: none; }
+.pill { min-height: 36px; padding: 6px 14px; border-radius: 99px; border: 0; background: var(--blue); color: #06203f; font-weight: 700; font-size: 13px; }
+body:not(.start-open) .installbar { display: none; }
+.topbar .chip { flex: 0 1 auto; min-width: 0; max-width: none; }

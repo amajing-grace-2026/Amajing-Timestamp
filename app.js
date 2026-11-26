@@ -10,7 +10,7 @@
   var DEFAULTS = {
     name: '', place: '', note: '', day: true, sec: false,
     gps: true, level: 'spesifik', coords: true, map: true,
-    size: 100, pos: 'bl', bg: 'gelap', accent: '#FFC93C', mirror: true, mark: true,
+    size: 100, pos: 'bl', bg: 'gelap', accent: '#FFC93C', mirror: true, mark: true, auto: true,
   };
   var KEY = 'amajing-timestamp-settings';
   var S = load();
@@ -423,19 +423,35 @@
     g.restore();
     // 3) cap waktu tegak di foto akhir
     lastData = stampData(now, true); lastTime = now;
+    lastData.maps = S.gps && S.coords && loc ? 'https://maps.google.com/?q=' + loc.lat.toFixed(6) + ',' + loc.lng.toFixed(6) : '';
+    var shotData = lastData, shotTime = now;
     drawStamp(g, ow, oh, lastData);
     $('flash').classList.add('on'); setTimeout(function () { $('flash').classList.remove('on'); }, 60);
     if (navigator.vibrate) navigator.vibrate(30);
     c.toBlob(function (b) {
-      if (!b) return toast('Gagal membuat foto.');
-      lastBlob = b;
-      if (lastUrl) URL.revokeObjectURL(lastUrl);
-      lastUrl = URL.createObjectURL(b);
-      $('resultImg').src = lastUrl; $('lastImg').src = lastUrl; $('btnLast').hidden = false;
-      showResult(true);
+      if (!b) return camToast('Gagal membuat foto.');
+      setLast(b, shotTime, shotData, true);
+      idbSet('last', { blob: b, time: shotTime.getTime(), data: shotData });
+      if (S.auto) {
+        var th = $('btnLast'); th.classList.add('saving');
+        savePhoto(true).then(function () { th.classList.remove('saving'); });
+      } else showResult(true);
     }, 'image/jpeg', 0.92);
   }
   function showResult(on) { $('result').hidden = !on; toast(''); }
+  // Foto terakhir: tampil di tombol kecil kiri tombol foto, tetap ada walau aplikasi ditutup
+  function setLast(b, time, data, pop) {
+    lastBlob = b; lastTime = time; lastData = data;
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(b);
+    $('resultImg').src = lastUrl; $('lastImg').src = lastUrl; $('btnLast').hidden = false;
+    if (pop) { var th = $('btnLast'); th.classList.remove('pop'); void th.offsetWidth; th.classList.add('pop'); }
+  }
+  var camT;
+  function camToast(msg) {
+    var el = $('camToast'); el.textContent = msg; el.hidden = !msg; clearTimeout(camT);
+    if (msg) camT = setTimeout(function () { el.hidden = true; }, 2600);
+  }
   function fileName() {
     var d = lastTime || new Date();
     return 'AmajingTimestamp_' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' +
@@ -449,7 +465,7 @@
       ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ' ' + tzLabel(d));
     if (S.place) lines.push('Tempat: ' + S.place);
     if (x.address) lines.push('Lokasi: ' + x.address);
-    if (S.gps && S.coords && loc) lines.push('Peta: https://maps.google.com/?q=' + loc.lat.toFixed(6) + ',' + loc.lng.toFixed(6));
+    if (x.maps) lines.push('Peta: ' + x.maps);
     return lines.join('\n');
   }
 
@@ -497,23 +513,30 @@
     $('folderText').textContent = dirHandle ? '…/' + FOLDER : 'Belum dipilih';
     $('btnFolder').textContent = dirHandle ? 'Ganti' : 'Pilih folder';
   }
-  function download() {
-    var a = document.createElement('a'); a.href = lastUrl; a.download = fileName();
+  function download(url, name) {
+    var a = document.createElement('a'); a.href = url || lastUrl; a.download = name || fileName();
     document.body.appendChild(a); a.click(); a.remove();
   }
-  function savePhoto() {
-    if (!lastBlob) return;
-    if (!canPickFolder) { download(); toast('Foto disimpan ke folder Download.'); return; }
-    getFolder().then(function (dir) {
-      return dir.getFileHandle(fileName(), { create: true });
-    }).then(function (fh) { return fh.createWritable(); }).then(function (w) {
-      return w.write(lastBlob).then(function () { return w.close(); });
-    }).then(function () {
-      toast('✓ Tersimpan di folder ' + FOLDER + '.');
-    }).catch(function (e) {
-      if (e && e.name === 'AbortError') return toast('Batal menyimpan.');
-      download(); toast('Folder tidak bisa dipakai — foto disimpan ke Download.');
+  // Antrean simpan: foto cepat beruntun disimpan satu per satu (pemilih folder tidak muncul dobel)
+  var saveQueue = Promise.resolve();
+  function savePhoto(auto) {
+    if (!lastBlob) return Promise.resolve();
+    var blob = lastBlob, name = fileName(), url = lastUrl;
+    var say = function (m) { if (auto === true) camToast(m); else toast(m); };
+    saveQueue = saveQueue.then(function () {
+      if (!canPickFolder) { download(url, name); say('✓ Tersimpan di folder Download'); return; }
+      return getFolder().then(function (dir) {
+        return dir.getFileHandle(name, { create: true });
+      }).then(function (fh) { return fh.createWritable(); }).then(function (w) {
+        return w.write(blob).then(function () { return w.close(); });
+      }).then(function () {
+        say('✓ Tersimpan di folder ' + FOLDER);
+      }).catch(function (e) {
+        if (e && e.name === 'AbortError') return say('Belum tersimpan — pilih folder dulu, atau tekan foto kecil → Simpan.');
+        download(url, name); say('Folder tidak bisa dipakai — foto disimpan ke Download.');
+      });
     });
+    return saveQueue;
   }
 
   function share() {
@@ -525,8 +548,7 @@
         navigator.share({ files: [file] }).catch(function () {});
       });
     } else {
-      savePhoto();
-      toast('Browser ini belum bisa langsung kirim. Foto sudah disimpan — kirim dari galeri.');
+      savePhoto().then(function () { toast('Browser ini belum bisa langsung kirim. Foto sudah disimpan — kirim dari galeri.'); });
     }
   }
   function copyReport() {
@@ -570,7 +592,10 @@
   bindCheck('sDay', 'day'); bindCheck('sSec', 'sec');
   bindCheck('sGps', 'gps', function () { syncGpsUi(); if (S.gps) startGps(); else stopGps(); });
   bindCheck('sCoords', 'coords'); bindCheck('sMap', 'map', maybeMap);
-  bindCheck('sMirror', 'mirror'); bindCheck('sMark', 'mark');
+  bindCheck('sMirror', 'mirror'); bindCheck('sMark', 'mark'); bindCheck('sAuto', 'auto');
+  idbGet('last').then(function (v) {
+    if (v && v.blob && !lastBlob) setLast(v.blob, new Date(v.time), v.data || null, false);
+  });
   bindSeg('sLevel', 'level', function () { syncGpsUi(); updateChip(); });
   bindSeg('sPos', 'pos'); bindSeg('sBg', 'bg'); bindSeg('sAccent', 'accent');
   var size = $('sSize'); size.value = S.size; $('sizeVal').textContent = S.size + '%';
@@ -602,7 +627,7 @@
   });
   $('btnLast').addEventListener('click', function () { showResult(true); });
   $('btnRetake').addEventListener('click', function () { showResult(false); });
-  $('btnSave').addEventListener('click', savePhoto);
+  $('btnSave').addEventListener('click', function () { savePhoto(false); });
   $('btnShare').addEventListener('click', share);
   $('btnCopy').addEventListener('click', copyReport);
   document.addEventListener('click', enableMotion, { once: true });
@@ -635,7 +660,7 @@
   };
   function syncInstall() {
     var show = !standalone();
-    $('btnInstall').hidden = !show;
+    $('btnInstall').hidden = !show; $('btnInstallTop').hidden = !show;
     var dismissed = false; try { dismissed = sessionStorage.getItem('ib-x') === '1'; } catch (e) {}
     $('installBar').hidden = !show || dismissed;
   }
@@ -649,8 +674,9 @@
     $('helpBg').hidden = false;
   }
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEvt = e; syncInstall(); });
-  window.addEventListener('appinstalled', function () { installEvt = null; $('installBar').hidden = true; $('btnInstall').hidden = true; });
+  window.addEventListener('appinstalled', function () { installEvt = null; $('installBar').hidden = true; $('btnInstall').hidden = true; $('btnInstallTop').hidden = true; });
   $('btnInstall').addEventListener('click', install);
+  $('btnInstallTop').addEventListener('click', install);
   $('btnInstallBar').addEventListener('click', install);
   $('btnInstallX').addEventListener('click', function () {
     $('installBar').hidden = true; try { sessionStorage.setItem('ib-x', '1'); } catch (e) {}

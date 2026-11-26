@@ -20,14 +20,18 @@
 <main class="stage" id="stage">
   <canvas id="view" aria-label="Pratinjau kamera dengan cap waktu"></canvas>
   <div class="flash" id="flash"></div>
+  <p class="cam-toast" id="camToast" role="status" aria-live="polite" hidden></p>
 
   <div class="topbar">
     <button class="chip" id="gpsChip" type="button" title="Status lokasi">
       <span class="dot" id="gpsDot"></span><span id="gpsText">Lokasi mati</span>
     </button>
+    <span class="top-right">
+    <button class="pill" id="btnInstallTop" type="button" hidden>📲 Instal</button>
     <button class="icon-btn" id="btnSettings" type="button" aria-label="Pengaturan">
       <svg class="rot" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
     </button>
+    </span>
   </div>
 
   <div class="bottombar">
@@ -83,7 +87,7 @@
 <section class="result" id="result" hidden>
   <div class="result-img"><img id="resultImg" alt="Foto dengan cap waktu"></div>
   <div class="result-actions">
-    <button class="btn" id="btnRetake" type="button">↺ Ulangi</button>
+    <button class="btn" id="btnRetake" type="button">← Kamera</button>
     <button class="btn" id="btnSave" type="button">⬇ Simpan</button>
     <button class="btn primary" id="btnShare" type="button">➤ Kirim</button>
   </div>
@@ -161,6 +165,7 @@
       <label class="row"><span>Tanda “Amajing Timestamp”</span><input id="sMark" type="checkbox" class="switch"></label>
 
       <h3>Penyimpanan</h3>
+      <label class="row"><span>Simpan otomatis setelah foto<br><small class="sub">Langsung tersimpan, bisa langsung foto lagi</small></span><input id="sAuto" type="checkbox" class="switch"></label>
       <div class="row folder-row">
         <span>Folder simpan<br><small id="folderText">Belum dipilih</small></span>
         <button class="btn sm" id="btnFolder" type="button">Pilih folder</button>
