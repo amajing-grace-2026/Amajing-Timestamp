@@ -1,5 +1,5 @@
 // Amajing Timestamp service worker — ganti CACHE_NAME setiap rilis
-const CACHE_NAME = 'amajing-timestamp-v3';
+const CACHE_NAME = 'amajing-timestamp-v4';
 const SHELL = [
   './', './index.html', './style.css', './app.js', './manifest.json',
   './brand/ikon.svg', './brand/ikon-192.png', './brand/ikon-512.png',

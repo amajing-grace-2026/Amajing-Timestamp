@@ -44,7 +44,8 @@
       stream = s; video.srcObject = s;
       return video.play();
     }).then(function () {
-      $('start').hidden = true; document.body.classList.remove('start-open');
+      $('start').hidden = true; $('camLoading').hidden = true; document.body.classList.remove('start-open');
+      try { localStorage.setItem('cam-ok', '1'); } catch (e) {}
       if (!running) { running = true; requestAnimationFrame(loop); }
     });
   }
@@ -54,6 +55,8 @@
       ? 'Izin kamera ditolak. Buka ikon gembok/ⓘ di address bar → Izin → Kamera → Izinkan, lalu muat ulang.'
       : err && err.name === 'NotFoundError' ? 'Kamera tidak ditemukan di perangkat ini.'
       : (err && err.message) || 'Kamera gagal dibuka.';
+    if (err && err.name === 'NotAllowedError') { try { localStorage.removeItem('cam-ok'); } catch (e) {} }
+    $('camLoading').hidden = true;
     $('start').hidden = false; document.body.classList.add('start-open');
     $('startErr').hidden = false; $('startErr').textContent = msg;
   }
@@ -431,7 +434,7 @@
     c.toBlob(function (b) {
       if (!b) return camToast('Gagal membuat foto.');
       setLast(b, shotTime, shotData, true);
-      idbSet('last', { blob: b, time: shotTime.getTime(), data: shotData });
+      addPhoto({ blob: b, time: shotTime.getTime(), data: shotData });
       if (S.auto) {
         var th = $('btnLast'); th.classList.add('saving');
         savePhoto(true).then(function () { th.classList.remove('saving'); });
@@ -444,7 +447,7 @@
     lastBlob = b; lastTime = time; lastData = data;
     if (lastUrl) URL.revokeObjectURL(lastUrl);
     lastUrl = URL.createObjectURL(b);
-    $('resultImg').src = lastUrl; $('lastImg').src = lastUrl; $('btnLast').hidden = false;
+    $('resultImg').src = lastUrl; $('lastImg').src = lastUrl; $('btnLast').classList.remove('empty');
     if (pop) { var th = $('btnLast'); th.classList.remove('pop'); void th.offsetWidth; th.classList.add('pop'); }
   }
   var camT;
@@ -472,19 +475,38 @@
   // ---------- Simpan ke folder "Amajing Timestamp" ----------
   var FOLDER = 'Amajing Timestamp', dirHandle = null;
   var canPickFolder = typeof window.showDirectoryPicker === 'function';
-  function idb(mode, fn) {
+  // IndexedDB: 'kv' (pengaturan folder) + 'photos' (galeri foto terakhir di aplikasi)
+  function idb(store, mode, fn) {
     return new Promise(function (res, rej) {
-      var rq = indexedDB.open('amajing-timestamp', 1);
-      rq.onupgradeneeded = function () { rq.result.createObjectStore('kv'); };
+      var rq = indexedDB.open('amajing-timestamp', 2);
+      rq.onupgradeneeded = function () {
+        var d = rq.result;
+        if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+        if (!d.objectStoreNames.contains('photos')) d.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+      };
       rq.onerror = function () { rej(rq.error); };
       rq.onsuccess = function () {
-        var tx = rq.result.transaction('kv', mode), st = tx.objectStore('kv'), out = fn(st);
-        tx.oncomplete = function () { res(out && out.result); }; tx.onerror = function () { rej(tx.error); };
+        var d = rq.result, tx = d.transaction(store, mode), out = fn(tx.objectStore(store));
+        tx.oncomplete = function () { d.close(); res(out && out.result); };
+        tx.onerror = function () { d.close(); rej(tx.error); };
       };
     });
   }
-  var idbGet = function (k) { return idb('readonly', function (s) { return s.get(k); }).catch(function () { return null; }); };
-  var idbSet = function (k, v) { return idb('readwrite', function (s) { s.put(v, k); }).catch(function () {}); };
+  var idbGet = function (k) { return idb('kv', 'readonly', function (s) { return s.get(k); }).catch(function () { return null; }); };
+  var idbSet = function (k, v) { return idb('kv', 'readwrite', function (s) { s.put(v, k); }).catch(function () {}); };
+  var MAX_PHOTOS = 30;
+  function addPhoto(p) {
+    return idb('photos', 'readwrite', function (s) {
+      s.add(p);
+      var rk = s.getAllKeys();
+      rk.onsuccess = function () { var k = rk.result; for (var i = 0; i < k.length - MAX_PHOTOS; i++) s.delete(k[i]); };
+    }).catch(function () {});
+  }
+  function listPhotos() {
+    return idb('photos', 'readonly', function (s) { return s.getAll(); })
+      .then(function (a) { return (a || []).sort(function (x, y) { return y.time - x.time; }); })
+      .catch(function () { return []; });
+  }
 
   function permitted(h) {
     var o = { mode: 'readwrite' };
@@ -593,9 +615,40 @@
   bindCheck('sGps', 'gps', function () { syncGpsUi(); if (S.gps) startGps(); else stopGps(); });
   bindCheck('sCoords', 'coords'); bindCheck('sMap', 'map', maybeMap);
   bindCheck('sMirror', 'mirror'); bindCheck('sMark', 'mark'); bindCheck('sAuto', 'auto');
-  idbGet('last').then(function (v) {
+  // Tombol galeri selalu ada; isi dengan foto terakhir yang tersimpan
+  listPhotos().then(function (a) {
+    if (a[0]) return a[0];
+    return idbGet('last');                       // data versi lama
+  }).then(function (v) {
     if (v && v.blob && !lastBlob) setLast(v.blob, new Date(v.time), v.data || null, false);
   });
+
+  // ---------- Galeri di aplikasi ----------
+  var galUrls = [];
+  function openGallery() {
+    $('galBg').hidden = false;
+    listPhotos().then(function (list) {
+      galUrls.forEach(function (u) { URL.revokeObjectURL(u); }); galUrls = [];
+      var grid = $('galGrid'); grid.innerHTML = '';
+      $('galTitle').textContent = 'Galeri' + (list.length ? ' (' + list.length + ' foto)' : '');
+      if (!list.length) { grid.innerHTML = '<p class="hint">Belum ada foto. Ambil foto dulu, nanti muncul di sini.</p>'; return; }
+      list.forEach(function (p) {
+        var u = URL.createObjectURL(p.blob); galUrls.push(u);
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'gal-item';
+        var d = new Date(p.time);
+        b.innerHTML = '<img alt=""><span></span>';
+        b.querySelector('img').src = u;
+        b.querySelector('span').textContent = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+        b.addEventListener('click', function () {
+          setLast(p.blob, d, p.data || null, false);
+          $('galBg').hidden = true; showResult(true);
+        });
+        grid.appendChild(b);
+      });
+    });
+  }
+  $('btnGalClose').addEventListener('click', function () { $('galBg').hidden = true; });
+  $('galBg').addEventListener('click', function (e) { if (e.target === $('galBg')) $('galBg').hidden = true; });
   bindSeg('sLevel', 'level', function () { syncGpsUi(); updateChip(); });
   bindSeg('sPos', 'pos'); bindSeg('sBg', 'bg'); bindSeg('sAccent', 'accent');
   var size = $('sSize'); size.value = S.size; $('sizeVal').textContent = S.size + '%';
@@ -625,7 +678,7 @@
     facing = facing === 'user' ? 'environment' : 'user';
     startCamera().catch(cameraError);
   });
-  $('btnLast').addEventListener('click', function () { showResult(true); });
+  $('btnLast').addEventListener('click', openGallery);
   $('btnRetake').addEventListener('click', function () { showResult(false); });
   $('btnSave').addEventListener('click', function () { savePhoto(false); });
   $('btnShare').addEventListener('click', share);
@@ -633,7 +686,7 @@
   document.addEventListener('click', enableMotion, { once: true });
   document.addEventListener('keydown', function (e) {
     if ((e.key === ' ' || e.key === 'Enter') && $('result').hidden && $('sheetBg').hidden && $('start').hidden && e.target === document.body) { e.preventDefault(); capture(); }
-    if (e.key === 'Escape') { openSheet(false); showResult(false); $('helpBg').hidden = true; }
+    if (e.key === 'Escape') { openSheet(false); showResult(false); $('helpBg').hidden = true; $('galBg').hidden = true; }
   });
 
   // Kamera dimatikan saat aplikasi di latar belakang (hemat baterai), hidup lagi saat kembali.
@@ -643,9 +696,15 @@
     else startCamera().catch(cameraError);
   });
 
-  // Mulai otomatis bila izin kamera sudah pernah diberikan
-  document.body.classList.add('start-open');
-  if (navigator.permissions && navigator.permissions.query) {
+  // Izin kamera cukup sekali: setelah pernah berhasil, layar awal dilewati dan kamera langsung dibuka.
+  var camOk = false; try { camOk = localStorage.getItem('cam-ok') === '1'; } catch (e) {}
+  if (camOk) {
+    $('start').hidden = true; $('camLoading').hidden = false;
+    startCamera().catch(cameraError); startGps();
+  } else {
+    document.body.classList.add('start-open');
+  }
+  if (!camOk && navigator.permissions && navigator.permissions.query) {
     navigator.permissions.query({ name: 'camera' }).then(function (p) {
       if (p.state === 'granted') { enableMotion(); startCamera().catch(cameraError); startGps(); }
     }).catch(function () {});
