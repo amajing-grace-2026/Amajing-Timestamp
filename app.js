@@ -39,7 +39,7 @@
     if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
     return navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1920 } },
+      video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
     }).then(function (s) {
       stream = s; video.srcObject = s;
       return video.play();
@@ -312,8 +312,16 @@
     return L;
   }
 
-  function drawStamp(g, W, H, d) {
-    var u = Math.min(W, H) / 1080 * (S.size / 100), L;
+  // ins = bagian tepi yang tertutup tombol (tulisan tidak diletakkan di sana)
+  function drawStamp(g, W, H, d, ins) {
+    ins = ins || { t: 0, r: 0, b: 0, l: 0 };
+    var u0 = Math.min(W, H) / 1080 * (S.size / 100);
+    g.save(); g.translate(ins.l, ins.t);
+    drawStampIn(g, Math.max(10, W - ins.l - ins.r), Math.max(10, H - ins.t - ins.b), d, u0);
+    g.restore();
+  }
+  function drawStampIn(g, W, H, d, u) {
+    var L;
     // Kecilkan otomatis bila tulisan tidak muat di bingkai foto (semua harus terlihat)
     for (var i = 0; i < 6; i++) {
       L = layoutStamp(g, W, H, d, u);
@@ -375,16 +383,35 @@
   }
 
   // Gambar cap waktu di area (0,0,W,H) yang diputar r derajat (searah jarum jam) supaya tegak bagi pengguna
-  function drawStampRotated(g, W, H, d, r) {
+  // Tepi tertutup (di layar) → tepi pada bingkai yang diputar r derajat
+  function rotIns(i, r) {
+    if (r === 90) return { t: i.r, r: i.b, b: i.l, l: i.t };
+    if (r === 180) return { t: i.b, r: i.l, b: i.t, l: i.r };
+    if (r === 270) return { t: i.l, r: i.t, b: i.r, l: i.b };
+    return i;
+  }
+  function drawStampRotated(g, W, H, d, r, ins) {
     var side = r === 90 || r === 270;
     var w = side ? H : W, h = side ? W : H;
     g.save();
     g.translate(W / 2, H / 2); g.rotate(r * Math.PI / 180); g.translate(-w / 2, -h / 2);
-    drawStamp(g, w, h, d);
+    drawStamp(g, w, h, d, rotIns(ins, r));
     g.restore();
   }
+  // Seberapa jauh bar atas & tombol bawah/samping menutupi layar kamera (piksel CSS)
+  function screenInsets() {
+    var v = view.getBoundingClientRect(), i = { t: 0, r: 0, b: 0, l: 0 };
+    var tb = document.querySelector('.topbar').getBoundingClientRect();
+    var bb = document.querySelector('.bottombar').getBoundingClientRect();
+    i.t = Math.max(0, tb.bottom - v.top);
+    if (bb.width < v.width / 2) i.r = Math.max(0, v.right - bb.left);   // tombol di samping (landscape)
+    else i.b = Math.max(0, v.bottom - bb.top);
+    return i;
+  }
+  var scaleIns = function (i, k) { return { t: i.t * k, r: i.r * k, b: i.b * k, l: i.l * k }; };
 
   // ---------- Pratinjau ----------
+  var viewInfo = null;   // potongan video yang terlihat + tepi tertutup, dalam piksel video
   function loop() {
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
     var cw = Math.round(view.clientWidth * dpr), ch = Math.round(view.clientHeight * dpr);
@@ -392,14 +419,15 @@
     vctx.fillStyle = '#000'; vctx.fillRect(0, 0, cw, ch);
     var vw = video.videoWidth, vh = video.videoHeight;
     if (vw && vh) {
-      var sc = Math.min(cw / vw, ch / vh), dw = vw * sc, dh = vh * sc, dx = (cw - dw) / 2, dy = (ch - dh) / 2;
+      // Layar penuh: video menutupi seluruh layar (dipotong di tepi), foto = yang terlihat
+      var sc = Math.max(cw / vw, ch / vh), sw = cw / sc, sh = ch / sc, sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+      var insCss = screenInsets();
+      viewInfo = { sx: sx, sy: sy, sw: sw, sh: sh, ins: scaleIns(insCss, dpr / sc) };
       vctx.save();
-      if (facing === 'user') { vctx.translate(dx + dw, dy); vctx.scale(-1, 1); vctx.drawImage(video, 0, 0, dw, dh); }
-      else vctx.drawImage(video, dx, dy, dw, dh);
+      if (facing === 'user') { vctx.translate(cw, 0); vctx.scale(-1, 1); }
+      vctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
       vctx.restore();
-      vctx.save(); vctx.translate(dx, dy); vctx.beginPath(); vctx.rect(0, 0, dw, dh); vctx.clip();
-      drawStampRotated(vctx, dw, dh, stampData(new Date(), false), stampRot());
-      vctx.restore();
+      drawStampRotated(vctx, cw, ch, stampData(new Date(), false), stampRot(), scaleIns(insCss, dpr));
     }
     requestAnimationFrame(loop);
   }
@@ -411,11 +439,14 @@
     if (!vw) return;
     enableMotion();
     var now = new Date(), r = stampRot(), side = r === 90 || r === 270;
-    // 1) bingkai seperti yang terlihat di layar (selfie = cermin)
+    // 1) bingkai persis seperti yang terlihat di layar penuh (selfie = cermin)
+    var vi = viewInfo || { sx: 0, sy: 0, sw: vw, sh: vh, ins: { t: 0, r: 0, b: 0, l: 0 } };
+    var sx = vi.sx, sy = vi.sy;
+    vw = Math.round(vi.sw); vh = Math.round(vi.sh);
     var f = document.createElement('canvas'); f.width = vw; f.height = vh;
     var fg = f.getContext('2d');
     if (facing === 'user') { fg.translate(vw, 0); fg.scale(-1, 1); }
-    fg.drawImage(video, 0, 0, vw, vh);
+    fg.drawImage(video, sx, sy, vw, vh, 0, 0, vw, vh);
     // 2) putar mengikuti arah HP sehingga foto landscape benar-benar landscape
     var ow = side ? vh : vw, oh = side ? vw : vh;
     var c = document.createElement('canvas'); c.width = ow; c.height = oh;
@@ -428,7 +459,7 @@
     lastData = stampData(now, true); lastTime = now;
     lastData.maps = S.gps && S.coords && loc ? 'https://maps.google.com/?q=' + loc.lat.toFixed(6) + ',' + loc.lng.toFixed(6) : '';
     var shotData = lastData, shotTime = now;
-    drawStamp(g, ow, oh, lastData);
+    drawStamp(g, ow, oh, lastData, rotIns(vi.ins, r));
     $('flash').classList.add('on'); setTimeout(function () { $('flash').classList.remove('on'); }, 60);
     if (navigator.vibrate) navigator.vibrate(30);
     c.toBlob(function (b) {
@@ -715,7 +746,7 @@
   // ---------- Pasang sebagai aplikasi ----------
   var installEvt = null;
   var standalone = function () {
-    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    return (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches)) || window.navigator.standalone === true;
   };
   function syncInstall() {
     var show = !standalone();
