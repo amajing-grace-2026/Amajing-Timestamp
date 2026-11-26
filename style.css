@@ -118,3 +118,32 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .foot a { color: var(--text); text-decoration: none; }
 .logo-inline { height: 16px; vertical-align: middle; }
 .sep { opacity: .5; }
+
+/* Ikon tombol ikut berputar saat HP dimiringkan */
+.rot { transition: transform .3s ease; transform: rotate(var(--rot, 0deg)); }
+
+/* Ajakan pasang aplikasi */
+.installbar { position: fixed; z-index: 4; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 124px);
+  max-width: 520px; margin: 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px;
+  border-radius: 16px; background: rgba(20,23,28,.94); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.installbar img { border-radius: 10px; flex: none; }
+.ib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 14px; line-height: 1.3; }
+.ib-text span { font-size: 12.5px; color: var(--muted); }
+.ib-x { border: 0; background: transparent; color: var(--muted); width: 36px; height: 44px; flex: none; }
+.btn.sm { min-height: 40px; padding: 8px 14px; font-size: 14px; flex: none; }
+.start-open .installbar { bottom: calc(env(safe-area-inset-bottom) + 16px); }
+.help ol { margin: 0 0 12px; padding-left: 20px; line-height: 1.6; color: #d4dbe4; }
+.help p { margin: 8px 0; }
+.folder-row small { color: var(--muted); font-size: 12.5px; }
+
+/* Bila layar browser ikut berputar ke landscape: tombol pindah ke kanan */
+@media (orientation: landscape) and (max-height: 560px) {
+  #view { top: 0; left: 0; bottom: 0; right: calc(env(safe-area-inset-right) + 108px);
+    width: calc(100% - env(safe-area-inset-right) - 108px); height: 100%; }
+  .topbar { right: calc(env(safe-area-inset-right) + 108px); background: transparent; padding-top: 10px; }
+  .bottombar { left: auto; top: 0; width: calc(env(safe-area-inset-right) + 108px); flex-direction: column-reverse;
+    padding: 16px calc(env(safe-area-inset-right) + 16px) 16px 16px; }
+  .installbar { bottom: 12px; right: 120px; }
+  .sheet { max-height: 96vh; }
+  .start { justify-content: flex-start; overflow-y: auto; }
+}

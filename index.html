@@ -10,6 +10,8 @@
 <link rel="icon" href="brand/ikon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Amajing Timestamp">
+<meta name="application-name" content="Amajing Timestamp">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -24,16 +26,16 @@
       <span class="dot" id="gpsDot"></span><span id="gpsText">Lokasi mati</span>
     </button>
     <button class="icon-btn" id="btnSettings" type="button" aria-label="Pengaturan">
-      <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+      <svg class="rot" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
     </button>
   </div>
 
   <div class="bottombar">
-    <button class="thumb" id="btnLast" type="button" aria-label="Foto terakhir" hidden><img id="lastImg" alt=""></button>
+    <button class="thumb" id="btnLast" type="button" aria-label="Foto terakhir" hidden><img id="lastImg" class="rot" alt=""></button>
     <span class="thumb-ph" id="thumbPh"></span>
     <button class="shutter" id="btnShutter" type="button" aria-label="Ambil foto"><span></span></button>
     <button class="icon-btn big" id="btnFlip" type="button" aria-label="Ganti kamera depan/belakang">
-      <svg viewBox="0 0 24 24" width="26" height="26"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 8h3l1.5-2h7L17 8h3v11H4zM9.5 13.5a2.5 2.5 0 0 0 4.6 1.3M14.5 12.5a2.5 2.5 0 0 0-4.6-1.3M14.6 15.8l-.5-1 1.1-.3M9.4 10.2l.5 1-1.1.3"/></svg>
+      <svg class="rot" viewBox="0 0 24 24" width="26" height="26"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 8h3l1.5-2h7L17 8h3v11H4zM9.5 13.5a2.5 2.5 0 0 0 4.6 1.3M14.5 12.5a2.5 2.5 0 0 0-4.6-1.3M14.6 15.8l-.5-1 1.1-.3M9.4 10.2l.5 1-1.1.3"/></svg>
     </button>
   </div>
 
@@ -47,6 +49,35 @@
     <p class="err" id="startErr" hidden></p>
   </section>
 </main>
+
+<!-- Ajakan pasang aplikasi -->
+<div class="installbar" id="installBar" hidden>
+  <img src="brand/ikon-192.png" alt="" width="40" height="40">
+  <div class="ib-text"><b>Pasang Amajing Timestamp</b><span>Buka langsung dari layar utama HP</span></div>
+  <button class="btn primary sm" id="btnInstallBar" type="button">Instal</button>
+  <button class="ib-x" id="btnInstallX" type="button" aria-label="Sembunyikan">✕</button>
+</div>
+
+<!-- Panduan pasang manual -->
+<div class="sheet-bg" id="helpBg" hidden>
+  <div class="sheet help" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="sheet-head">
+      <h2 id="helpTitle">Cara pasang di HP</h2>
+      <button class="icon-btn dark" id="btnHelpClose" type="button" aria-label="Tutup">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div id="helpAndroid">
+        <p><b>Android (Chrome)</b></p>
+        <ol><li>Tekan menu <b>⋮</b> di kanan atas Chrome.</li><li>Pilih <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>.</li><li>Tekan <b>Instal</b>. Ikon <b>Amajing Timestamp</b> muncul di layar utama.</li></ol>
+      </div>
+      <div id="helpIos">
+        <p><b>iPhone (Safari)</b></p>
+        <ol><li>Tekan tombol <b>Bagikan</b> (kotak dengan panah ke atas) di bawah layar.</li><li>Gulir lalu pilih <b>Tambahkan ke Layar Utama</b>.</li><li>Tekan <b>Tambah</b>.</li></ol>
+      </div>
+      <p class="hint">Kalau tombol tidak muncul, pastikan membuka link ini di Chrome (Android) atau Safari (iPhone), bukan dari browser dalam WhatsApp.</p>
+    </div>
+  </div>
+</div>
 
 <!-- Hasil foto -->
 <section class="result" id="result" hidden>
@@ -129,7 +160,14 @@
       <label class="row"><span>Selfie disimpan seperti cermin</span><input id="sMirror" type="checkbox" class="switch"></label>
       <label class="row"><span>Tanda “Amajing Timestamp”</span><input id="sMark" type="checkbox" class="switch"></label>
 
-      <button class="btn primary wide" id="btnInstall" type="button" hidden>📲 Pasang di layar utama</button>
+      <h3>Penyimpanan</h3>
+      <div class="row folder-row">
+        <span>Folder simpan<br><small id="folderText">Belum dipilih</small></span>
+        <button class="btn sm" id="btnFolder" type="button">Pilih folder</button>
+      </div>
+      <p class="hint" id="folderHint">Foto disimpan ke folder <b>Amajing Timestamp</b>. Saat pertama kali, pilih tempatnya (mis. <b>Pictures</b> atau <b>DCIM</b>) — folder Amajing Timestamp dibuat otomatis di dalamnya.</p>
+
+      <button class="btn primary wide" id="btnInstall" type="button">📲 Pasang aplikasi di HP</button>
       <p class="hint">Jam diambil dari jam HP. Alamat dari OpenStreetMap (perlu internet); tanpa internet hanya koordinat yang tampil.</p>
 
       <footer class="foot">

@@ -1,7 +1,7 @@
 {
   "id": "./?app=amajing-timestamp",
   "name": "Amajing Timestamp",
-  "short_name": "Timestamp",
+  "short_name": "Amajing Timestamp",
   "description": "Kamera selfie dengan cap waktu, tanggal, dan lokasi GPS untuk absen dan laporan kunjungan. Dari Amajing Labs.",
   "lang": "id",
   "start_url": "./index.html",

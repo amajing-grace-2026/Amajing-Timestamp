@@ -44,7 +44,7 @@
       stream = s; video.srcObject = s;
       return video.play();
     }).then(function () {
-      $('start').hidden = true;
+      $('start').hidden = true; document.body.classList.remove('start-open');
       if (!running) { running = true; requestAnimationFrame(loop); }
     });
   }
@@ -54,13 +54,48 @@
       ? 'Izin kamera ditolak. Buka ikon gembok/ⓘ di address bar → Izin → Kamera → Izinkan, lalu muat ulang.'
       : err && err.name === 'NotFoundError' ? 'Kamera tidak ditemukan di perangkat ini.'
       : (err && err.message) || 'Kamera gagal dibuka.';
-    $('start').hidden = false; $('startErr').hidden = false; $('startErr').textContent = msg;
+    $('start').hidden = false; document.body.classList.add('start-open');
+    $('startErr').hidden = false; $('startErr').textContent = msg;
   }
 
+  // ---------- Arah HP (portrait / landscape) ----------
+  // devRot = putaran fisik HP berlawanan jarum jam: 0 tegak, 90 atas di kiri, 180 terbalik, 270 atas di kanan.
+  // Dibaca dari sensor gravitasi, jadi tetap jalan walau rotasi otomatis HP dimatikan.
+  var devRot = 0, motionOn = false;
+  var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function screenAngle() {
+    var a = screen.orientation && typeof screen.orientation.angle === 'number' ? screen.orientation.angle
+      : typeof window.orientation === 'number' ? window.orientation : 0;
+    return (a + 360) % 360;
+  }
+  // Berapa derajat (searah jarum jam di layar) tulisan harus diputar agar tegak bagi pengguna
+  function stampRot() { return (devRot - screenAngle() + 360) % 360; }
+  function onMotion(e) {
+    var a = e.accelerationIncludingGravity; if (!a || a.x == null || a.y == null) return;
+    var x = a.x, y = a.y;
+    if (isIOS) { x = -x; y = -y; }
+    if (Math.sqrt(x * x + y * y) < 4.5) return;          // HP hampir rata (di meja) → arah tidak diubah
+    var ang = (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+    var cand = (Math.round(ang / 90) % 4) * 90;
+    var diff = Math.abs(((ang - cand + 540) % 360) - 180);
+    if (diff < 30 && cand !== devRot) { devRot = cand; applyRot(); }
+  }
+  function applyRot() {
+    var r = stampRot();
+    document.documentElement.style.setProperty('--rot', (r === 270 ? -90 : r) + 'deg');
+  }
+  function enableMotion() {
+    if (motionOn || typeof window.DeviceMotionEvent === 'undefined') return;
+    var attach = function () { if (!motionOn) { motionOn = true; window.addEventListener('devicemotion', onMotion); } };
+    if (isIOS && typeof DeviceMotionEvent.requestPermission === 'function') {      // iPhone: perlu izin lewat sentuhan
+      DeviceMotionEvent.requestPermission().then(function (s) { if (s === 'granted') attach(); }).catch(function () {});
+    } else attach();
+  }
+  window.addEventListener('orientationchange', applyRot);
+  if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', applyRot);
+
   // ---------- GPS & alamat ----------
-  var loc = null;        // {lat, lng, acc}
-  var addr = null;       // {poi, jalan, kel, kec, kota, prov, pos}
-  var geoAt = null;      // titik terakhir yang sudah dicari alamatnya
+  var loc = null, addr = null, geoAt = null;
   var geoBusy = false, geoLastTry = 0, watchId = null, gpsErr = '';
 
   function startGps() {
@@ -177,7 +212,7 @@
     var fx = (at.lng + 180) / 360 * n;
     var r = at.lat * Math.PI / 180;
     var fy = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n;
-    var px = fx * 256, py = fy * 256, half = 128;   // area 256×256 piksel ubin di sekitar titik
+    var px = fx * 256, py = fy * 256, half = 128;
     var x0 = Math.floor((px - half) / 256), y0 = Math.floor((py - half) / 256);
     var jobs = [];
     for (var dx = 0; dx < 2; dx++) for (var dy = 0; dy < 2; dy++) {
@@ -234,56 +269,70 @@
   }
 
   var FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  var font = function (w, s) { return w + ' ' + s + 'px ' + FONT; };
+
+  // Hitung ukuran semua bagian untuk skala u (tanpa menggambar)
+  function layoutStamp(g, W, H, d, u) {
+    var minD = Math.min(W, H);
+    var L = { u: u, margin: Math.round(minD * 0.035), pad: 24 * u,
+      timeSize: 92 * u, dSize: 30 * u, lSize: 30 * u, sSize: 24 * u, mSize: 20 * u, rows: [] };
+    // Lebar teks dibatasi supaya di foto landscape kotaknya tidak memanjang menutupi seluruh foto
+    var maxW = Math.min(W - 2 * L.margin, Math.max(minD * 1.15, W * 0.6)) - 2 * L.pad;
+    var addRows = function (text, size, weight, color) {
+      g.font = font(weight, size);
+      wrap(g, text, maxW).forEach(function (t) { L.rows.push({ text: t, size: size, weight: weight, color: color }); });
+    };
+    if (S.place) addRows(S.place, L.lSize, '700', '#fff');
+    if (d.address) addRows(d.address, L.lSize, '500', '#fff');
+    if (d.waiting) addRows(d.waiting, L.sSize, 'italic 500', 'rgba(255,255,255,.7)');
+    if (d.coords) addRows(d.coords, L.sSize, '500', 'rgba(255,255,255,.82)');
+    if (S.name) addRows(S.name, L.lSize, '700', S.accent);
+    if (S.note) addRows(S.note, L.lSize, '500', '#fff');
+
+    g.font = font('700', L.timeSize); L.timeW = g.measureText(d.time).width;
+    g.font = font('700', L.dSize); var w1 = g.measureText(d.top).width;
+    g.font = font('500', L.dSize); var w2 = g.measureText(d.bottom).width;
+    L.barGap = 16 * u; L.barW = 6 * u;
+    var headW = L.timeW + L.barGap * 2 + L.barW + Math.max(w1, w2);
+    L.headH = L.timeSize * 0.95;
+
+    var bodyH = 0, bodyW = 0;
+    L.rows.forEach(function (r) { g.font = font(r.weight, r.size); bodyW = Math.max(bodyW, g.measureText(r.text).width); bodyH += r.size * 1.3; });
+    L.gapBody = L.rows.length ? 14 * u : 0;
+    var markH = S.mark ? L.mSize * 1.9 : 0;
+    L.boxW = Math.max(headW, bodyW, S.mark ? 220 * u : 0) + L.pad * 2;
+    L.boxH = L.pad + L.headH + L.gapBody + bodyH + markH + L.pad * 0.8;
+    L.hasMap = !!(S.gps && S.map && mapImg && loc);
+    L.ms = L.hasMap ? Math.min(210 * u, minD * 0.32) : 0;
+    L.mg = L.hasMap ? 10 * u : 0;
+    L.totalH = L.boxH + L.ms + L.mg;
+    return L;
+  }
+
   function drawStamp(g, W, H, d) {
-    var u = Math.min(W, H) / 1080 * (S.size / 100);
-    var margin = Math.round(Math.min(W, H) * 0.035), pad = 24 * u, maxW = Math.min(W * 0.94, W - 2 * margin) - 2 * pad;
-    var timeSize = 92 * u, dSize = 30 * u, lSize = 30 * u, sSize = 24 * u, mSize = 20 * u;
+    var u = Math.min(W, H) / 1080 * (S.size / 100), L;
+    // Kecilkan otomatis bila tulisan tidak muat di bingkai foto (semua harus terlihat)
+    for (var i = 0; i < 6; i++) {
+      L = layoutStamp(g, W, H, d, u);
+      var f = Math.min((W - 2 * L.margin) / L.boxW, (H - 2 * L.margin) / L.totalH);
+      if (f >= 1) break;
+      u *= Math.max(f * 0.97, 0.4);
+    }
+    var left = S.pos === 'bl' || S.pos === 'tl', bottom = S.pos === 'bl' || S.pos === 'br';
+    var bx = left ? L.margin : W - L.margin - L.boxW;
+    var by = bottom ? H - L.margin - L.boxH : L.margin + (L.hasMap ? 0 : 0);
     var shadow = S.bg === 'none';
 
-    // Susun baris info
-    var rows = []; // {text, size, weight, color}
-    var addRows = function (text, size, weight, color) {
-      g.font = weight + ' ' + size + 'px ' + FONT;
-      wrap(g, text, maxW).forEach(function (t) { rows.push({ text: t, size: size, weight: weight, color: color }); });
-    };
-    if (S.place) addRows(S.place, lSize, '700', '#fff');
-    if (d.address) addRows(d.address, lSize, '500', '#fff');
-    if (d.waiting) addRows(d.waiting, sSize, 'italic 500', 'rgba(255,255,255,.7)');
-    if (d.coords) addRows(d.coords, sSize, '500', 'rgba(255,255,255,.82)');
-    if (S.name) addRows(S.name, lSize, '700', S.accent);
-    if (S.note) addRows(S.note, lSize, '500', '#fff');
-
-    // Ukuran blok jam
-    g.font = '700 ' + timeSize + 'px ' + FONT;
-    var timeW = g.measureText(d.time).width;
-    g.font = '700 ' + dSize + 'px ' + FONT; var w1 = g.measureText(d.top).width;
-    g.font = '500 ' + dSize + 'px ' + FONT; var w2 = g.measureText(d.bottom).width;
-    var barGap = 16 * u, barW = 6 * u;
-    var headW = timeW + barGap * 2 + barW + Math.max(w1, w2), headH = timeSize * 0.95;
-
-    var lineGap = 1.3, bodyH = 0, bodyW = 0;
-    rows.forEach(function (r) { g.font = r.weight + ' ' + r.size + 'px ' + FONT; bodyW = Math.max(bodyW, g.measureText(r.text).width); bodyH += r.size * lineGap; });
-    var markH = S.mark ? mSize * 1.9 : 0;
-    var innerW = Math.max(headW, bodyW, S.mark ? 220 * u : 0);
-    var boxW = innerW + pad * 2, boxH = pad + headH + (rows.length ? 14 * u + bodyH : 0) + markH + pad * 0.8;
-
-    var left = S.pos === 'bl' || S.pos === 'tl', bottom = S.pos === 'bl' || S.pos === 'br';
-    var bx = left ? margin : W - margin - boxW;
-    var by = bottom ? H - margin - boxH : margin;
-
-    // Peta mini di atas/bawah kotak
-    if (S.gps && S.map && mapImg && loc) {
-      var ms = Math.min(210 * u, Math.min(W, H) * 0.32), mg = 10 * u;
-      var mx = left ? bx : bx + boxW - ms;
-      var my = bottom ? by - mg - ms : by + boxH + mg;
+    if (L.hasMap) {
+      var ms = L.ms, mx = left ? bx : bx + L.boxW - ms;
+      var my = bottom ? by - L.mg - ms : by + L.boxH + L.mg;
       g.save(); rrect(g, mx, my, ms, ms, 14 * u); g.clip();
       g.drawImage(mapImg, mx, my, ms, ms);
       g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(mx, my + ms - 18 * u, ms, 18 * u);
-      g.fillStyle = '#fff'; g.font = '500 ' + 11 * u + 'px ' + FONT; g.textBaseline = 'middle'; g.textAlign = 'right';
+      g.fillStyle = '#fff'; g.font = font('500', 11 * u); g.textBaseline = 'middle'; g.textAlign = 'right';
       g.fillText('© OpenStreetMap', mx + ms - 6 * u, my + ms - 9 * u);
       g.restore();
       g.textAlign = 'left';
-      // pin
       var cx = mx + ms / 2, cy = my + ms / 2, pr = 11 * u;
       g.beginPath(); g.arc(cx, cy - pr * 1.2, pr, Math.PI * 0.85, Math.PI * 0.15); g.lineTo(cx, cy); g.closePath();
       g.fillStyle = '#E53935'; g.fill(); g.lineWidth = 2.5 * u; g.strokeStyle = '#fff'; g.stroke();
@@ -291,36 +340,45 @@
       g.lineWidth = 2 * u; g.strokeStyle = 'rgba(255,255,255,.85)'; rrect(g, mx, my, ms, ms, 14 * u); g.stroke();
     }
 
-    // Kotak latar
     if (S.bg !== 'none') {
       g.fillStyle = S.bg === 'gelap' ? 'rgba(0,0,0,.5)' : 'rgba(0,0,0,.22)';
-      rrect(g, bx, by, boxW, boxH, 18 * u); g.fill();
+      rrect(g, bx, by, L.boxW, L.boxH, 18 * u); g.fill();
     }
     if (shadow) { g.shadowColor = 'rgba(0,0,0,.85)'; g.shadowBlur = 8 * u; g.shadowOffsetY = 2 * u; }
 
     g.textBaseline = 'alphabetic'; g.textAlign = 'left';
-    var x = bx + pad, y = by + pad;
-    g.fillStyle = '#fff'; g.font = '700 ' + timeSize + 'px ' + FONT;
-    g.fillText(d.time, x, y + headH * 0.86);
-    var barX = x + timeW + barGap;
-    g.fillStyle = S.accent; rrect(g, barX, y + headH * 0.08, barW, headH * 0.84, barW / 2); g.fill();
-    var tx = barX + barW + barGap;
-    g.fillStyle = '#fff'; g.font = '700 ' + dSize + 'px ' + FONT; g.fillText(d.top, tx, y + headH * 0.42);
-    g.fillStyle = 'rgba(255,255,255,.88)'; g.font = '500 ' + dSize + 'px ' + FONT; g.fillText(d.bottom, tx, y + headH * 0.86);
+    var x = bx + L.pad, y = by + L.pad, hh = L.headH;
+    g.fillStyle = '#fff'; g.font = font('700', L.timeSize);
+    g.fillText(d.time, x, y + hh * 0.86);
+    var barX = x + L.timeW + L.barGap;
+    g.fillStyle = S.accent; rrect(g, barX, y + hh * 0.08, L.barW, hh * 0.84, L.barW / 2); g.fill();
+    var tx = barX + L.barW + L.barGap;
+    g.fillStyle = '#fff'; g.font = font('700', L.dSize); g.fillText(d.top, tx, y + hh * 0.42);
+    g.fillStyle = 'rgba(255,255,255,.88)'; g.font = font('500', L.dSize); g.fillText(d.bottom, tx, y + hh * 0.86);
 
-    y += headH + (rows.length ? 14 * u : 0);
-    rows.forEach(function (r) {
-      g.font = r.weight + ' ' + r.size + 'px ' + FONT; g.fillStyle = r.color;
-      g.fillText(r.text, x, y + r.size * 1.0);
-      y += r.size * lineGap;
+    y += hh + L.gapBody;
+    L.rows.forEach(function (r) {
+      g.font = font(r.weight, r.size); g.fillStyle = r.color;
+      g.fillText(r.text, x, y + r.size);
+      y += r.size * 1.3;
     });
     if (S.mark) {
-      y += mSize * 0.5;
-      g.fillStyle = S.accent; g.beginPath(); g.arc(x + mSize * 0.35, y + mSize * 0.62, mSize * 0.3, 0, Math.PI * 2); g.fill();
-      g.fillStyle = 'rgba(255,255,255,.7)'; g.font = '600 ' + mSize + 'px ' + FONT;
-      g.fillText('Amajing Timestamp', x + mSize * 0.95, y + mSize * 0.95);
+      var m = L.mSize; y += m * 0.5;
+      g.fillStyle = S.accent; g.beginPath(); g.arc(x + m * 0.35, y + m * 0.62, m * 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.7)'; g.font = font('600', m);
+      g.fillText('Amajing Timestamp', x + m * 0.95, y + m * 0.95);
     }
     g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0;
+  }
+
+  // Gambar cap waktu di area (0,0,W,H) yang diputar r derajat (searah jarum jam) supaya tegak bagi pengguna
+  function drawStampRotated(g, W, H, d, r) {
+    var side = r === 90 || r === 270;
+    var w = side ? H : W, h = side ? W : H;
+    g.save();
+    g.translate(W / 2, H / 2); g.rotate(r * Math.PI / 180); g.translate(-w / 2, -h / 2);
+    drawStamp(g, w, h, d);
+    g.restore();
   }
 
   // ---------- Pratinjau ----------
@@ -337,7 +395,7 @@
       else vctx.drawImage(video, dx, dy, dw, dh);
       vctx.restore();
       vctx.save(); vctx.translate(dx, dy); vctx.beginPath(); vctx.rect(0, 0, dw, dh); vctx.clip();
-      drawStamp(vctx, dw, dh, stampData(new Date(), false));
+      drawStampRotated(vctx, dw, dh, stampData(new Date(), false), stampRot());
       vctx.restore();
     }
     requestAnimationFrame(loop);
@@ -348,14 +406,24 @@
   function capture() {
     var vw = video.videoWidth, vh = video.videoHeight;
     if (!vw) return;
-    var now = new Date();
-    var c = document.createElement('canvas'); c.width = vw; c.height = vh;
+    enableMotion();
+    var now = new Date(), r = stampRot(), side = r === 90 || r === 270;
+    // 1) bingkai seperti yang terlihat di layar (selfie = cermin)
+    var f = document.createElement('canvas'); f.width = vw; f.height = vh;
+    var fg = f.getContext('2d');
+    if (facing === 'user') { fg.translate(vw, 0); fg.scale(-1, 1); }
+    fg.drawImage(video, 0, 0, vw, vh);
+    // 2) putar mengikuti arah HP sehingga foto landscape benar-benar landscape
+    var ow = side ? vh : vw, oh = side ? vw : vh;
+    var c = document.createElement('canvas'); c.width = ow; c.height = oh;
     var g = c.getContext('2d');
-    if (facing === 'user' && S.mirror) { g.translate(vw, 0); g.scale(-1, 1); }
-    g.drawImage(video, 0, 0, vw, vh);
-    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.save();
+    if (facing === 'user' && !S.mirror) { g.translate(ow, 0); g.scale(-1, 1); }   // selfie tidak dicermin
+    g.translate(ow / 2, oh / 2); g.rotate(-r * Math.PI / 180); g.drawImage(f, -vw / 2, -vh / 2);
+    g.restore();
+    // 3) cap waktu tegak di foto akhir
     lastData = stampData(now, true); lastTime = now;
-    drawStamp(g, vw, vh, lastData);
+    drawStamp(g, ow, oh, lastData);
     $('flash').classList.add('on'); setTimeout(function () { $('flash').classList.remove('on'); }, 60);
     if (navigator.vibrate) navigator.vibrate(30);
     c.toBlob(function (b) {
@@ -370,7 +438,7 @@
   function showResult(on) { $('result').hidden = !on; toast(''); }
   function fileName() {
     var d = lastTime || new Date();
-    return 'Timestamp_' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' +
+    return 'AmajingTimestamp_' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' +
       pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) + '.jpg';
   }
   function reportText() {
@@ -384,22 +452,80 @@
     if (S.gps && S.coords && loc) lines.push('Peta: https://maps.google.com/?q=' + loc.lat.toFixed(6) + ',' + loc.lng.toFixed(6));
     return lines.join('\n');
   }
+
+  // ---------- Simpan ke folder "Amajing Timestamp" ----------
+  var FOLDER = 'Amajing Timestamp', dirHandle = null;
+  var canPickFolder = typeof window.showDirectoryPicker === 'function';
+  function idb(mode, fn) {
+    return new Promise(function (res, rej) {
+      var rq = indexedDB.open('amajing-timestamp', 1);
+      rq.onupgradeneeded = function () { rq.result.createObjectStore('kv'); };
+      rq.onerror = function () { rej(rq.error); };
+      rq.onsuccess = function () {
+        var tx = rq.result.transaction('kv', mode), st = tx.objectStore('kv'), out = fn(st);
+        tx.oncomplete = function () { res(out && out.result); }; tx.onerror = function () { rej(tx.error); };
+      };
+    });
+  }
+  var idbGet = function (k) { return idb('readonly', function (s) { return s.get(k); }).catch(function () { return null; }); };
+  var idbSet = function (k, v) { return idb('readwrite', function (s) { s.put(v, k); }).catch(function () {}); };
+
+  function permitted(h) {
+    var o = { mode: 'readwrite' };
+    return h.queryPermission(o).then(function (p) {
+      return p === 'granted' || h.requestPermission(o).then(function (p2) { return p2 === 'granted'; });
+    }).catch(function () { return false; });
+  }
+  function pickFolder() {
+    return window.showDirectoryPicker({ id: 'amajing-timestamp', mode: 'readwrite', startIn: 'pictures' }).then(function (parent) {
+      return parent.name === FOLDER ? parent : parent.getDirectoryHandle(FOLDER, { create: true });
+    }).then(function (d) { dirHandle = d; idbSet('dir', d); updateFolderUi(); return d; });
+  }
+  function getFolder() {
+    return (dirHandle ? Promise.resolve(dirHandle) : idbGet('dir')).then(function (h) {
+      if (!h) return pickFolder();
+      return permitted(h).then(function (ok) { if (ok) { dirHandle = h; return h; } return pickFolder(); });
+    });
+  }
+  function updateFolderUi() {
+    if (!canPickFolder) {
+      $('folderText').textContent = 'Download (browser ini tidak bisa memilih folder)';
+      $('btnFolder').hidden = true;
+      $('folderHint').textContent = 'Di browser ini foto masuk ke folder Download dengan nama AmajingTimestamp_…jpg. Untuk langsung ke folder Amajing Timestamp, pakai Chrome versi terbaru.';
+      return;
+    }
+    $('folderText').textContent = dirHandle ? '…/' + FOLDER : 'Belum dipilih';
+    $('btnFolder').textContent = dirHandle ? 'Ganti' : 'Pilih folder';
+  }
   function download() {
     var a = document.createElement('a'); a.href = lastUrl; a.download = fileName();
     document.body.appendChild(a); a.click(); a.remove();
-    toast('Foto disimpan ke folder Download.');
   }
+  function savePhoto() {
+    if (!lastBlob) return;
+    if (!canPickFolder) { download(); toast('Foto disimpan ke folder Download.'); return; }
+    getFolder().then(function (dir) {
+      return dir.getFileHandle(fileName(), { create: true });
+    }).then(function (fh) { return fh.createWritable(); }).then(function (w) {
+      return w.write(lastBlob).then(function () { return w.close(); });
+    }).then(function () {
+      toast('✓ Tersimpan di folder ' + FOLDER + '.');
+    }).catch(function (e) {
+      if (e && e.name === 'AbortError') return toast('Batal menyimpan.');
+      download(); toast('Folder tidak bisa dipakai — foto disimpan ke Download.');
+    });
+  }
+
   function share() {
     if (!lastBlob) return;
     var file = new File([lastBlob], fileName(), { type: 'image/jpeg' });
-    var data = { files: [file], text: reportText() };
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share(data).catch(function (e) {
+      navigator.share({ files: [file], text: reportText() }).catch(function (e) {
         if (e && e.name === 'AbortError') return;
         navigator.share({ files: [file] }).catch(function () {});
       });
     } else {
-      download();
+      savePhoto();
       toast('Browser ini belum bisa langsung kirim. Foto sudah disimpan — kirim dari galeri.');
     }
   }
@@ -415,7 +541,7 @@
     }
   }
   var toastT;
-  function toast(msg) { var el = $('toast'); el.textContent = msg; clearTimeout(toastT); if (msg) toastT = setTimeout(function () { el.textContent = ''; }, 4000); }
+  function toast(msg) { var el = $('toast'); el.textContent = msg; clearTimeout(toastT); if (msg) toastT = setTimeout(function () { el.textContent = ''; }, 4500); }
 
   // ---------- Panel pengaturan ----------
   function bindText(id, key) {
@@ -436,7 +562,7 @@
     paint();
   }
   function syncGpsUi() {
-    $('sGps').closest('.sheet-body').querySelector('.gps-only').classList.toggle('off', !S.gps);
+    document.querySelector('.gps-only').classList.toggle('off', !S.gps);
     $('levelHint').textContent = LEVEL_HINT[S.level] || '';
   }
 
@@ -450,6 +576,10 @@
   var size = $('sSize'); size.value = S.size; $('sizeVal').textContent = S.size + '%';
   size.addEventListener('input', function () { S.size = +size.value; $('sizeVal').textContent = S.size + '%'; save(); });
   syncGpsUi();
+  if (canPickFolder) idbGet('dir').then(function (h) { if (h) dirHandle = h; updateFolderUi(); }); else updateFolderUi();
+  $('btnFolder').addEventListener('click', function () {
+    pickFolder().then(function () { toast(''); }).catch(function () {});
+  });
 
   function openSheet(on) { $('sheetBg').hidden = !on; }
   $('btnSettings').addEventListener('click', function () { openSheet(true); });
@@ -460,22 +590,25 @@
   // ---------- Tombol utama ----------
   $('btnStart').addEventListener('click', function () {
     $('startErr').hidden = true;
+    enableMotion();
     startCamera().catch(cameraError);
     startGps();
   });
   $('btnShutter').addEventListener('click', capture);
   $('btnFlip').addEventListener('click', function () {
+    enableMotion();
     facing = facing === 'user' ? 'environment' : 'user';
     startCamera().catch(cameraError);
   });
   $('btnLast').addEventListener('click', function () { showResult(true); });
   $('btnRetake').addEventListener('click', function () { showResult(false); });
-  $('btnSave').addEventListener('click', download);
+  $('btnSave').addEventListener('click', savePhoto);
   $('btnShare').addEventListener('click', share);
   $('btnCopy').addEventListener('click', copyReport);
+  document.addEventListener('click', enableMotion, { once: true });
   document.addEventListener('keydown', function (e) {
     if ((e.key === ' ' || e.key === 'Enter') && $('result').hidden && $('sheetBg').hidden && $('start').hidden && e.target === document.body) { e.preventDefault(); capture(); }
-    if (e.key === 'Escape') { openSheet(false); showResult(false); }
+    if (e.key === 'Escape') { openSheet(false); showResult(false); $('helpBg').hidden = true; }
   });
 
   // Kamera dimatikan saat aplikasi di latar belakang (hemat baterai), hidup lagi saat kembali.
@@ -486,20 +619,46 @@
   });
 
   // Mulai otomatis bila izin kamera sudah pernah diberikan
+  document.body.classList.add('start-open');
   if (navigator.permissions && navigator.permissions.query) {
     navigator.permissions.query({ name: 'camera' }).then(function (p) {
-      if (p.state === 'granted') { startCamera().catch(cameraError); startGps(); }
+      if (p.state === 'granted') { enableMotion(); startCamera().catch(cameraError); startGps(); }
     }).catch(function () {});
   }
-  updateChip();
+  updateChip(); applyRot();
+  if (!isIOS) enableMotion();   // Android: sensor langsung aktif tanpa izin
 
   // ---------- Pasang sebagai aplikasi ----------
   var installEvt = null;
-  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEvt = e; $('btnInstall').hidden = false; });
-  $('btnInstall').addEventListener('click', function () {
-    if (!installEvt) return; installEvt.prompt();
-    installEvt.userChoice.then(function () { installEvt = null; $('btnInstall').hidden = true; });
+  var standalone = function () {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  };
+  function syncInstall() {
+    var show = !standalone();
+    $('btnInstall').hidden = !show;
+    var dismissed = false; try { dismissed = sessionStorage.getItem('ib-x') === '1'; } catch (e) {}
+    $('installBar').hidden = !show || dismissed;
+  }
+  function install() {
+    if (installEvt) {
+      installEvt.prompt();
+      installEvt.userChoice.then(function () { installEvt = null; syncInstall(); });
+      return;
+    }
+    $('helpIos').hidden = !isIOS; $('helpAndroid').hidden = isIOS;
+    $('helpBg').hidden = false;
+  }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEvt = e; syncInstall(); });
+  window.addEventListener('appinstalled', function () { installEvt = null; $('installBar').hidden = true; $('btnInstall').hidden = true; });
+  $('btnInstall').addEventListener('click', install);
+  $('btnInstallBar').addEventListener('click', install);
+  $('btnInstallX').addEventListener('click', function () {
+    $('installBar').hidden = true; try { sessionStorage.setItem('ib-x', '1'); } catch (e) {}
   });
+  $('btnHelpClose').addEventListener('click', function () { $('helpBg').hidden = true; });
+  $('helpBg').addEventListener('click', function (e) { if (e.target === $('helpBg')) $('helpBg').hidden = true; });
+  syncInstall();
+
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
